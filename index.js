@@ -5,7 +5,7 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-// Hilfsfunktion für sicheren Download (wartet bis Datei wirklich fertig)
+// Hilfsfunktion für sicheren Download
 async function downloadFile(url, path) {
   const response = await axios({ url, method: 'GET', responseType: 'stream' });
   return new Promise((resolve, reject) => {
@@ -21,15 +21,15 @@ app.post('/normalize', async (req, res) => {
   if (!url) return res.status(400).send('URL fehlt');
 
   const input = 'input.mp3';
-  const output = 'output_super_sanft.mp3';
+  const output = 'output_podcast.mp3';
 
   try {
     console.log("Starte Download von", url);
     await downloadFile(url, input);
     console.log("Download abgeschlossen, starte ffmpeg");
 
-    // Maximal sanfte Normalisierung – nur loudnorm (I=-18), Limiter, Highpass
-    const ffmpegCmd = `ffmpeg -i ${input} -af "highpass=f=80,loudnorm=I=-18:TP=-1.5:LRA=10,alimiter=limit=0.98" -ar 44100 -ac 2 -b:a 192k ${output}`;
+    // Podcast Best Practice: Schön laut, ohne Clipping, Spotify-Ready!
+    const ffmpegCmd = `ffmpeg -i ${input} -af "loudnorm=I=-16:TP=-1.0:LRA=11,alimiter=limit=0.97" -ar 44100 -ac 2 -b:a 192k ${output}`;
 
     exec(ffmpegCmd, (err, stdout, stderr) => {
       if (err) {
