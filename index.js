@@ -21,15 +21,15 @@ app.post('/normalize', async (req, res) => {
   if (!url) return res.status(400).send('URL fehlt');
 
   const input = 'input.mp3';
-  const output = 'output_optimiert.mp3';
+  const output = 'output_sanft.mp3';
 
   try {
     console.log("Starte Download von", url);
     await downloadFile(url, input);
     console.log("Download abgeschlossen, starte ffmpeg");
 
-    // Profi-ffmpeg-Filterkette: Flüstern/Leises retten
-    const ffmpegCmd = `ffmpeg -i ${input} -af "acompressor=level_in=2:threshold=-40dB:ratio=20:attack=10:release=1000,loudnorm=I=-14:TP=-1.5:LRA=8,alimiter=limit=0.98" -ar 44100 -ac 2 -b:a 192k ${output}`;
+    // Sanfte Normalisierung – NUR loudnorm & limiter, keine Kompression!
+    const ffmpegCmd = `ffmpeg -i ${input} -af "loudnorm=I=-16:TP=-1.5:LRA=10,alimiter=limit=0.98" -ar 44100 -ac 2 -b:a 192k ${output}`;
 
     exec(ffmpegCmd, (err, stdout, stderr) => {
       if (err) {
@@ -49,4 +49,3 @@ app.post('/normalize', async (req, res) => {
 });
 
 app.listen(3000, () => console.log('API läuft auf Port 3000'));
-
