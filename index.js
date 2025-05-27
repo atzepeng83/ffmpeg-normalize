@@ -28,8 +28,8 @@ app.post('/normalize', async (req, res) => {
     await downloadFile(url, input);
     console.log("Download abgeschlossen, starte ffmpeg");
 
-    // Sanftes Normalisieren, keine harten Eingriffe – broadcast-ready, bleibt natürlich
-    const ffmpegCmd = `ffmpeg -i ${input} -af "loudnorm=I=-16:TP=-1.0:LRA=11,alimiter=limit=0.98" -ar 44100 -ac 2 -b:a 192k ${output}`;
+    // Podcast Best Practice: Schön laut, ohne Clipping, Spotify-Ready!
+    const ffmpegCmd = ffmpeg -i ${input} -af "loudnorm=I=-16:TP=-1.0:LRA=11,alimiter=limit=0.97" -ar 44100 -ac 2 -b:a 192k ${output};
 
     exec(ffmpegCmd, (err, stdout, stderr) => {
       if (err) {
@@ -49,3 +49,6 @@ app.post('/normalize', async (req, res) => {
 });
 
 app.listen(3000, () => console.log('API läuft auf Port 3000'));
+
+
+
