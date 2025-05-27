@@ -28,8 +28,8 @@ app.post('/normalize', async (req, res) => {
     await downloadFile(url, input);
     console.log("Download abgeschlossen, starte ffmpeg");
 
-    // Optimiert: Erst Loudness-Normalisierung, dann dynaudnorm für kurze Peaks (gerade am Anfang), dann Limiter
-    const ffmpegCmd = `ffmpeg -i ${input} -af "loudnorm=I=-16:TP=-1.0:LRA=11,dynaudnorm=f=100:g=5,alimiter=limit=0.97" -ar 44100 -ac 2 -b:a 192k ${output}`;
+    // Sanftes Normalisieren, keine harten Eingriffe – broadcast-ready, bleibt natürlich
+    const ffmpegCmd = `ffmpeg -i ${input} -af "loudnorm=I=-16:TP=-1.0:LRA=11,alimiter=limit=0.98" -ar 44100 -ac 2 -b:a 192k ${output}`;
 
     exec(ffmpegCmd, (err, stdout, stderr) => {
       if (err) {
