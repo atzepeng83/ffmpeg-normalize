@@ -16,12 +16,23 @@ async function downloadFile(url, path) {
   });
 }
 
-// baut den ffmpeg-Befehl – mit/ohne De-Esser
+// baut den ffmpeg Befehl mit oder ohne De Esser
 function buildFfmpegCmd(input, output, useDeEsser = true) {
   const filters = [];
-  if (useDeEsser) filters.push('deesser'); // konservativ: Defaults
-  filters.push('loudnorm=I=-16:TP=-1.0:LRA=11');
+  if (useDeEsser) filters.push('deesser'); // bleibt aktiv, wenn verfügbar
+
+  // NEU gegen Bass Dröhnen
+  filters.push('highpass=f=85'); // leichtes High Pass Filter bei 85 Hz, bei Bedarf 75 bis 110 testen
+
+  // GEÄNDERT 1 dB leiser normalisieren
+  filters.push('loudnorm=I=-17:TP=-1.0:LRA=11'); // vorher I=-16
+
+  // Alternative statt I=-17 falls du -16 behalten willst
+  // filters.push('loudnorm=I=-16:TP=-1.0:LRA=11,volume=-1dB'); // Optionale Variante
+
+  // Limiter wie gehabt
   filters.push('alimiter=limit=0.97');
+
   const af = filters.join(',');
   return `ffmpeg -y -i ${input} -af "${af}" -ar 44100 -ac 2 -b:a 192k ${output}`;
 }
@@ -38,25 +49,25 @@ app.post('/normalize', async (req, res) => {
     await downloadFile(url, input);
     console.log("Download abgeschlossen, starte ffmpeg");
 
-    // 1. Versuch: mit De-Esser
+    // 1. Versuch mit De Esser
     let ffmpegCmd = buildFfmpegCmd(input, output, true);
     exec(ffmpegCmd, (err, stdout, stderr) => {
       if (err) {
         const s = String(stderr || '');
-        const noFilter = s.includes("No such filter") || s.includes("deesser") && s.includes("Unknown");
+        const noFilter = s.includes("No such filter") || (s.includes("deesser") && s.includes("Unknown"));
 
         if (noFilter) {
-          console.warn('deesser-Filter nicht verfügbar—Fallback ohne deesser.');
-          // 2. Versuch: ohne De-Esser
+          console.warn('deesser Filter nicht verfügbar, Fallback ohne deesser');
+          // 2. Versuch ohne De Esser
           const fallbackCmd = buildFfmpegCmd(input, output, false);
           return exec(fallbackCmd, (err2, stdout2, stderr2) => {
             if (err2) {
-              console.error('ffmpeg Fehler (Fallback):', stderr2);
+              console.error('ffmpeg Fehler Fallback:', stderr2);
               try { if (fs.existsSync(input)) fs.unlinkSync(input); } catch {}
               try { if (fs.existsSync(output)) fs.unlinkSync(output); } catch {}
               return res.status(500).send('Fehler beim Normalisieren');
             }
-            console.log("ffmpeg fertig (Fallback), sende File zurück");
+            console.log("ffmpeg fertig Fallback, sende File zurück");
             res.download(output, (e) => {
               try { if (fs.existsSync(input)) fs.unlinkSync(input); } catch {}
               try { if (fs.existsSync(output)) fs.unlinkSync(output); } catch {}
@@ -77,7 +88,7 @@ app.post('/normalize', async (req, res) => {
       });
     });
   } catch (e) {
-    console.error('Download-Fehler:', e);
+    console.error('Download Fehler:', e);
     try { if (fs.existsSync(input)) fs.unlinkSync(input); } catch {}
     try { if (fs.existsSync(output)) fs.unlinkSync(output); } catch {}
     res.status(500).send('Fehler beim Download');
@@ -85,4 +96,3 @@ app.post('/normalize', async (req, res) => {
 });
 
 app.listen(3000, () => console.log('API läuft auf Port 3000'));
-
