@@ -1,56 +1,84 @@
+// index.js
 const express = require('express');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const axios = require('axios');
 const fs = require('fs');
-const app = express();
-app.use(express.json());
+const path = require('path');
 
-// Hilfsfunktion für sicheren Download
-async function downloadFile(url, path) {
-  const response = await axios({ url, method: 'GET', responseType: 'stream' });
-  return new Promise((resolve, reject) => {
-    const writer = fs.createWriteStream(path);
-    response.data.pipe(writer);
-    writer.on('finish', resolve);
-    writer.on('error', reject);
+const app = express();
+app.use(express.json({ limit: '2mb' }));
+
+// ---------- Helpers ----------
+function tmpName(prefix, ext) {
+  const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return path.join(process.cwd(), `${prefix}_${id}.${ext}`);
+}
+
+async function downloadFile(url, filepath) {
+  const response = await axios({
+    url,
+    method: 'GET',
+    responseType: 'stream',
+    // optional: timeout / headers hier setzen
+  });
+  await new Promise((resolve, reject) => {
+    const w = fs.createWriteStream(filepath);
+    response.data.pipe(w);
+    w.on('finish', resolve);
+    w.on('error', reject);
   });
 }
 
-app.post('/normalize', async (req, res) => {
-  const { url } = req.body;
-  if (!url) return res.status(400).send('URL fehlt');
+function buildFilterChain(opts) {
+  const filters = [];
 
-  const input = 'input.mp3';
-  const output = 'output_podcast.mp3';
-
-  try {
-    console.log("Starte Download von", url);
-    await downloadFile(url, input);
-    console.log("Download abgeschlossen, starte ffmpeg");
-
-    // Template String für den ffmpeg Befehl!
-    const ffmpegCmd = `ffmpeg -y -i ${input} -af "loudnorm=I=-16:TP=-1.0:LRA=11,alimiter=limit=0.97" -ar 44100 -ac 2 -b:a 192k ${output}`;
-
-    exec(ffmpegCmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error('ffmpeg Fehler:', stderr);
-        // Immer aufräumen
-        try { if (fs.existsSync(input)) fs.unlinkSync(input); } catch {}
-        try { if (fs.existsSync(output)) fs.unlinkSync(output); } catch {}
-        return res.status(500).send('Fehler beim Normalisieren');
-      }
-      console.log("ffmpeg fertig, sende File zurück");
-      res.download(output, (err) => {
-        try { if (fs.existsSync(input)) fs.unlinkSync(input); } catch {}
-        try { if (fs.existsSync(output)) fs.unlinkSync(output); } catch {}
-      });
-    });
-  } catch (e) {
-    console.error('Download-Fehler:', e);
-    try { if (fs.existsSync(input)) fs.unlinkSync(input); } catch {}
-    try { if (fs.existsSync(output)) fs.unlinkSync(output); } catch {}
-    res.status(500).send('Fehler beim Download');
+  // De-Esser (standard: aktiv)
+  // opts.deesser: boolean | string
+  // true  -> "deesser"
+  // string -> "deesser=<string>"  z. B. "f=6000:t=0.5"
+  // false/undefined -> deaktiviert
+  if (opts.deesser !== false) {
+    if (typeof opts.deesser === 'string' && opts.deesser.trim().length > 0) {
+      filters.push(`deesser=${opts.deesser.trim()}`);
+    } else {
+      filters.push('deesser'); // Defaults von FFmpeg
+    }
   }
-});
 
-app.listen(3000, () => console.log('API läuft auf Port 3000'));
+  // Loudness-Normalisierung (EBU R128)
+  // string erlaubt, sonst Default
+  if (opts.loudnorm === null) {
+    // explizit aus
+  } else if (typeof opts.loudnorm === 'string' && opts.loudnorm.trim().length > 0) {
+    filters.push(`loudnorm=${opts.loudnorm.trim()}`);
+  } else {
+    // konservativer Podcast-Default
+    filters.push('loudnorm=I=-16:TP=-1.0:LRA=11');
+  }
+
+  // Optionales dynamisches Leveling (vor Limiter, nach loudnorm nicht nötig, aber für Rohmaterial ok)
+  if (typeof opts.dynaudnorm === 'string' && opts.dynaudnorm.trim().length > 0) {
+    filters.push(`dynaudnorm=${opts.dynaudnorm.trim()}`); // z. B. "f=150:g=7"
+  } else if (opts.dynaudnorm === true) {
+    filters.push('dynaudnorm=f=150:g=7');
+  }
+
+  // Limiter
+  if (opts.limiter === null) {
+    // aus
+  } else if (typeof opts.limiter === 'string' && opts.limiter.trim().length > 0) {
+    filters.push(`alimiter=${opts.limiter.trim()}`);
+  } else {
+    filters.push('alimiter=limit=0.97');
+  }
+
+  return filters.join(',');
+}
+
+// ---------- Route ----------
+/**
+ * POST /normalize
+ * Body:
+ * {
+ *   "url": "https://.../in.mp3",
+ *   "o*
